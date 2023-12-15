@@ -1,2 +1,2 @@
 # 4GTaskManager
-The 4G Task Manager has been adapted from the concept of the 4 Quadrants time management tool introduced by Stephen R. Covey in his book "The 7 Habits of Highly Effective People." 
+The 4G Task Manager has been adapted from the concept of the 4 Quadrants time management tool introduced by Stephen R. Covey in his book "The 7 Habits of Highly Effective People." Through this  program I have tried to give a concrete shape to this abstract concept of the 4G time management matrix by creating the Fourth Generation Task Manager web application using AWS cloud services.
