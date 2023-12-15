@@ -1,0 +1,766 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS CloudFormation template for 4G Task Manager'
+
+Resources:
+  #DynamoDB table
+  taskDetailsDynamoDBTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      AttributeDefinitions: 
+        - 
+          AttributeName: "user_email"
+          AttributeType: "S"
+        - 
+          AttributeName: "task_name"
+          AttributeType: "S"
+  
+      KeySchema: 
+        - 
+          AttributeName: "user_email"
+          KeyType: "HASH" #refers to the partition key
+        - 
+          AttributeName: "task_name"
+          KeyType: "RANGE"  #rrefers to the sort key
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "5"
+        WriteCapacityUnits: "5"
+      TableName: "task_details"
+   #SNS   
+  snsForTaskManagerApp:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: 'newsletter@the4gtaskmanager.com'
+      FifoTopic: False
+      TopicName: 'SendNewsLetter2'
+   #API Gateway   
+  apiGatewayFor4GTaskManager:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Description: 'API Gateway for 4G Task Manager'
+      Name: '4GTaskManagerAPI'
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+  #Lambda permission for API
+  addTaskLambdaPermissionforAddTaskApi:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref addTaskLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGatewayFor4GTaskManager}/*/*"
+    DependsOn: addTaskLambdaFunction
+   # add task Lambda   
+  addTaskLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: 'addTask.lambda_handler' 
+      Role: 'arn:aws:iam::432497273216:role/LabRole' 
+      FunctionName: 'addTask2'
+      Runtime: 'python3.11'
+      Code:
+        S3Bucket: '4g-task-manager-lambdas'  
+        S3Key: 'addTask.zip'
+   #API Gateway add task Resource
+  addTaskApiGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ParentId: !GetAtt apiGatewayFor4GTaskManager.RootResourceId
+      PathPart: addTasks
+  #API Gateway add task Resource's POST method
+  postMethodForAddTaskApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref addTaskApiGatewayResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: Empty
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST #must for lambda integration
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters: 
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates: 
+              application/json: ""
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${addTaskLambdaFunction.Arn}/invocations"
+    DependsOn: 
+      - addTaskLambdaPermissionforAddTaskApi
+      - addTaskLambdaFunction
+  #API API Gateway add task Resource's OPTIONS method to Enable CORS
+  optionsMethodForAddTaskApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref addTaskApiGatewayResource
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+             method.response.header.Access-Control-Allow-Origin: true
+             method.response.header.Access-Control-Allow-Headers: true
+             method.response.header.Access-Control-Allow-Methods: true
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: "{statusCode:200}"
+        ContentHandling: CONVERT_TO_TEXT
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent,X-Amzn-Trace-Id'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+            ResponseTemplates:
+              application/json: ""
+  #delete task Lambda permission for API
+  deleteTaskLambdaPermissionforDeleteTaskApi:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref deleteTaskLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGatewayFor4GTaskManager}/*/*"
+    DependsOn: deleteTaskLambdaFunction
+    #delete task lambda
+  deleteTaskLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: 'deleteTask.lambda_handler' 
+      Role: 'arn:aws:iam::432497273216:role/LabRole' 
+      FunctionName: 'deleteTask2'
+      Runtime: 'python3.11'
+      Code:
+        S3Bucket: '4g-task-manager-lambdas'  
+        S3Key: 'deleteTask.zip'
+  #API Gateway delete task Resource
+  deleteTaskApiGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ParentId: !GetAtt apiGatewayFor4GTaskManager.RootResourceId
+      PathPart: deleteTask
+  #API Gateway delete task Resource's POST method
+  postMethodForDeleteTaskApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref deleteTaskApiGatewayResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: Empty
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST #must for lambda integration
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters: 
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates: 
+              application/json: ""
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${deleteTaskLambdaFunction.Arn}/invocations"
+    DependsOn: 
+      - deleteTaskLambdaPermissionforDeleteTaskApi
+      - deleteTaskLambdaFunction
+  #API API Gateway delete task Resource's OPTIONS method to Enable CORS
+  optionsMethodForDeleteTaskApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref deleteTaskApiGatewayResource
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+             method.response.header.Access-Control-Allow-Origin: true
+             method.response.header.Access-Control-Allow-Headers: true
+             method.response.header.Access-Control-Allow-Methods: true
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: "{statusCode:200}"
+        ContentHandling: CONVERT_TO_TEXT
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent,X-Amzn-Trace-Id'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+            ResponseTemplates:
+              application/json: ""
+  #subscribeNewsletter Lambda permission for API
+  subscribeNewsletterLambdaPermissionforsubscribeNewsletterApi:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref subscribeNewsletterLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGatewayFor4GTaskManager}/*/*"
+    DependsOn: subscribeNewsletterLambdaFunction
+  #subscribeNewsletter lambda function
+  subscribeNewsletterLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: 'subscribeNewsletter1.lambda_handler' 
+      Role: 'arn:aws:iam::432497273216:role/LabRole' 
+      FunctionName: 'subscribeNewsletter2'
+      Runtime: 'python3.11'
+      Code:
+        S3Bucket: '4g-task-manager-lambdas'  
+        S3Key: 'subscribeNewsletter1.zip'
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref snsForTaskManagerApp
+    DependsOn: snsForTaskManagerApp
+  #API Gateway subscribeNewsletter Resource
+  subscribeNewsletterApiGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ParentId: !GetAtt apiGatewayFor4GTaskManager.RootResourceId
+      PathPart: subscribeNewsletter
+  #API Gateway subscribeNewsletter Resource's POST method
+  postMethodForsubscribeNewsletterApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref subscribeNewsletterApiGatewayResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: Empty
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST #must for lambda integration
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters: 
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates: 
+              application/json: ""
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${subscribeNewsletterLambdaFunction.Arn}/invocations"
+    DependsOn: 
+      - subscribeNewsletterLambdaPermissionforsubscribeNewsletterApi
+      - subscribeNewsletterLambdaFunction
+  #API Gateway subscribeNewsletter Resource's OPTIONS method to Enable CORS
+  optionsMethodForsubscribeNewsletterApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref subscribeNewsletterApiGatewayResource
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+             method.response.header.Access-Control-Allow-Origin: true
+             method.response.header.Access-Control-Allow-Headers: true
+             method.response.header.Access-Control-Allow-Methods: true
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: "{statusCode:200}"
+        ContentHandling: CONVERT_TO_TEXT
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent,X-Amzn-Trace-Id'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+            ResponseTemplates:
+              application/json: ""
+  #getIButNotUTasks Lambda permission for API
+  getIButNotUTasksLambdaPermissionforgetIButNotUTasksApi:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref getIButNotUTasksLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGatewayFor4GTaskManager}/*/*"
+    DependsOn: getIButNotUTasksLambdaFunction
+  # getIButNotUTasks lambda function  
+  getIButNotUTasksLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: 'getIButNotUTasks.lambda_handler' 
+      Role: 'arn:aws:iam::432497273216:role/LabRole' 
+      FunctionName: 'getIButNotUTasks2'
+      Runtime: 'python3.11'
+      Code:
+        S3Bucket: '4g-task-manager-lambdas'  
+        S3Key: 'getIButNotUTasks.zip'
+  #API Gateway getIButNotUTasks Resource
+  getIButNotUTasksApiGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ParentId: !GetAtt apiGatewayFor4GTaskManager.RootResourceId
+      PathPart: getIButNotUTasks
+  #API Gateway getIButNotUTasks Resource's GET method
+  getMethodForgetIButNotUTasksApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref getIButNotUTasksApiGatewayResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: Empty
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST #must for lambda integration
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters: 
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates: 
+              application/json: ""
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${getIButNotUTasksLambdaFunction.Arn}/invocations"
+    DependsOn: 
+      - getIButNotUTasksLambdaPermissionforgetIButNotUTasksApi
+      - getIButNotUTasksLambdaFunction    
+  #API Gateway getIButNotUTasks Resource's OPTIONS method to Enable CORS
+  optionsMethodForgetIButNotUTasksApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref getIButNotUTasksApiGatewayResource
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+             method.response.header.Access-Control-Allow-Origin: true
+             method.response.header.Access-Control-Allow-Headers: true
+             method.response.header.Access-Control-Allow-Methods: true
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: "{statusCode:200}"
+        ContentHandling: CONVERT_TO_TEXT
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent,X-Amzn-Trace-Id'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+            ResponseTemplates:
+              application/json: ""
+  #getNeitherUAndITasks Lambda permission for API
+  getNeitherUAndITasksLambdaPermissionforgetNeitherUAndITasksApi:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref getNeitherUAndITasksLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGatewayFor4GTaskManager}/*/*"
+    DependsOn: getNeitherUAndITasksLambdaFunction
+  #getNeitherUAndITasks lambda function
+  getNeitherUAndITasksLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: 'getNeitherUAndITasks.lambda_handler' 
+      Role: 'arn:aws:iam::432497273216:role/LabRole' 
+      FunctionName: 'getNeitherUAndITasks2'
+      Runtime: 'python3.11'
+      Code:
+        S3Bucket: '4g-task-manager-lambdas'  
+        S3Key: 'getNeitherUAndITasks.zip'
+  #API Gateway getNeitherUAndITasks Resource
+  getNeitherUAndITasksApiGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ParentId: !GetAtt apiGatewayFor4GTaskManager.RootResourceId
+      PathPart: getNeitherUAndITasks
+  #API Gateway getNeitherUAndITasks Resource's GET method
+  getMethodForgetNeitherUAndITasksApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref getNeitherUAndITasksApiGatewayResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: Empty
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST #must for lambda integration
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters: 
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates: 
+              application/json: ""
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${getNeitherUAndITasksLambdaFunction.Arn}/invocations"
+    DependsOn: 
+      - getNeitherUAndITasksLambdaPermissionforgetNeitherUAndITasksApi
+      - getNeitherUAndITasksLambdaFunction
+  #API Gateway getNeitherUAndITasks Resource's OPTIONS method to Enable CORS
+  optionsMethodForgetNeitherUAndITasksApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref getNeitherUAndITasksApiGatewayResource
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+             method.response.header.Access-Control-Allow-Origin: true
+             method.response.header.Access-Control-Allow-Headers: true
+             method.response.header.Access-Control-Allow-Methods: true
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: "{statusCode:200}"
+        ContentHandling: CONVERT_TO_TEXT
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent,X-Amzn-Trace-Id'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+            ResponseTemplates:
+              application/json: ""
+  #getUButNotITasks Lambda permission for API
+  getUButNotITasksLambdaPermissionforgetUButNotITasksApi:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref getUButNotITasksLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGatewayFor4GTaskManager}/*/*"
+    DependsOn: getUButNotITasksLambdaFunction
+  #getUButNotITasks lambda function
+  getUButNotITasksLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: 'getUButNotITasks.lambda_handler' 
+      Role: 'arn:aws:iam::432497273216:role/LabRole' 
+      FunctionName: 'getUButNotITasks2'
+      Runtime: 'python3.11'
+      Code:
+        S3Bucket: '4g-task-manager-lambdas'  
+        S3Key: 'getUButNotITasks.zip'
+  #API Gateway getUButNotITasks Resource
+  getUButNotITasksApiGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ParentId: !GetAtt apiGatewayFor4GTaskManager.RootResourceId
+      PathPart: getUButNotITasks
+  #API Gateway getUButNotITasks Resource's GET method
+  getMethodForgetUButNotITasksApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref getUButNotITasksApiGatewayResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: Empty
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST #must for lambda integration
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters: 
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates: 
+              application/json: ""
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${getUButNotITasksLambdaFunction.Arn}/invocations"
+    DependsOn: 
+      - getUButNotITasksLambdaPermissionforgetUButNotITasksApi
+      - getUButNotITasksLambdaFunction
+  #API Gateway getUButNotITasks Resource's OPTIONS method to Enable CORS
+  optionsMethodForgetUButNotITasksApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref getUButNotITasksApiGatewayResource
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+             method.response.header.Access-Control-Allow-Origin: true
+             method.response.header.Access-Control-Allow-Headers: true
+             method.response.header.Access-Control-Allow-Methods: true
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: "{statusCode:200}"
+        ContentHandling: CONVERT_TO_TEXT
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent,X-Amzn-Trace-Id'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+            ResponseTemplates:
+              application/json: ""
+  #getUandITasks Lambda permission for API
+  getUandITasksLambdaPermissionforgetUandITasksApi:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref getUandITasksLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGatewayFor4GTaskManager}/*/*"
+    DependsOn: getUandITasksLambdaFunction
+  #getUandITasks lambda function
+  getUandITasksLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: 'getUandITasks.lambda_handler' 
+      Role: 'arn:aws:iam::432497273216:role/LabRole' 
+      FunctionName: 'getUandITasks2'
+      Runtime: 'python3.11'
+      Code:
+        S3Bucket: '4g-task-manager-lambdas'  
+        S3Key: 'getUandITasks.zip'
+  #API Gateway getUandITasks Resource
+  getUandITasksApiGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ParentId: !GetAtt apiGatewayFor4GTaskManager.RootResourceId
+      PathPart: getUandITasks
+  #API Gateway getUandITasks Resource's GET method
+  getMethodForgetUandITasksApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref getUandITasksApiGatewayResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: Empty
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST #must for lambda integration
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters: 
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates: 
+              application/json: ""
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${getUandITasksLambdaFunction.Arn}/invocations"
+    DependsOn: 
+      - getUandITasksLambdaPermissionforgetUandITasksApi
+      - getUandITasksLambdaFunction
+  #API Gateway getUButNotITasks Resource's OPTIONS method to Enable CORS
+  optionsMethodForgetUandITasksTasksApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref getUandITasksApiGatewayResource
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+             method.response.header.Access-Control-Allow-Origin: true
+             method.response.header.Access-Control-Allow-Headers: true
+             method.response.header.Access-Control-Allow-Methods: true
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: "{statusCode:200}"
+        ContentHandling: CONVERT_TO_TEXT
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent,X-Amzn-Trace-Id'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+            ResponseTemplates:
+              application/json: ""
+  #notifyNewsletterLambda permission for API
+  notifyNewsletterLambdaPermissionfornotifyNewsletterApi:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref notifyNewsletterLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGatewayFor4GTaskManager}/*/*"
+    DependsOn: notifyNewsletterLambdaFunction
+  #notifyNewsletter lambda function
+  notifyNewsletterLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: 'notifyNewsletter1.lambda_handler' 
+      Role: 'arn:aws:iam::432497273216:role/LabRole' 
+      FunctionName: 'notifyNewsletter2'
+      Runtime: 'python3.11'
+      Code:
+        S3Bucket: '4g-task-manager-lambdas'  
+        S3Key: 'notifyNewsletter1.zip'
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref snsForTaskManagerApp
+    DependsOn: snsForTaskManagerApp
+#API Gateway notifyNewsletter Resource
+  notifyNewsletterApiGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ParentId: !GetAtt apiGatewayFor4GTaskManager.RootResourceId
+      PathPart: notifyNewsletter
+#API Gateway notifyNewsletter Resource's POST method
+  postMethodFornotifyNewsletterApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref notifyNewsletterApiGatewayResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+          ResponseModels:
+            application/json: Empty
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST #must for lambda integration
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters: 
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates: 
+              application/json: ""
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${notifyNewsletterLambdaFunction.Arn}/invocations"
+    DependsOn: 
+      - notifyNewsletterLambdaPermissionfornotifyNewsletterApi
+      - notifyNewsletterLambdaFunction
+#API Gateway notifyNewsletter Resource's OPTIONS method to Enable CORS
+  optionsMethodFornotifyNewsletterApi:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      ResourceId: !Ref notifyNewsletterApiGatewayResource
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+             method.response.header.Access-Control-Allow-Origin: true
+             method.response.header.Access-Control-Allow-Headers: true
+             method.response.header.Access-Control-Allow-Methods: true
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: "{statusCode:200}"
+        ContentHandling: CONVERT_TO_TEXT
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent,X-Amzn-Trace-Id'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+            ResponseTemplates:
+              application/json: ""
+#API deployment 
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref apiGatewayFor4GTaskManager
+      StageName: prod
+    DependsOn:
+      - postMethodForAddTaskApi
+      - optionsMethodForAddTaskApi
+      - postMethodForDeleteTaskApi
+      - optionsMethodForDeleteTaskApi
+      - postMethodForsubscribeNewsletterApi
+      - optionsMethodForsubscribeNewsletterApi
+      - getMethodForgetIButNotUTasksApi
+      - optionsMethodForgetIButNotUTasksApi
+      - getMethodForgetNeitherUAndITasksApi
+      - optionsMethodForgetNeitherUAndITasksApi
+      - getMethodForgetUButNotITasksApi
+      - optionsMethodForgetUButNotITasksApi
+      - getMethodForgetUandITasksApi
+      - optionsMethodForgetUandITasksTasksApi
+      - postMethodFornotifyNewsletterApi
+      - optionsMethodFornotifyNewsletterApi
+  #Elastic Beanstalk for frontend deployment
+  beanstalkApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      ApplicationName: 4GTaskManagerFrontend
+  beanstalkAppVersion:
+    Type: "AWS::ElasticBeanstalk::ApplicationVersion"
+    Properties:
+      ApplicationName: !Ref beanstalkApplication
+      SourceBundle:
+        S3Bucket: "4g-task-manager-frontend"
+        S3Key: "deploy.zip"
+  beanstalkConfigurationTemplate:
+    Type: AWS::ElasticBeanstalk::ConfigurationTemplate
+    Properties:
+      ApplicationName: !Ref beanstalkApplication
+      SolutionStackName: "64bit Amazon Linux 2 v5.8.8 running Node.js 18"
+      OptionSettings: 
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: LabInstanceProfile
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: InstanceType
+          Value: t3.micro
+        - Namespace: aws:elasticbeanstalk:environment
+          OptionName: ServiceRole
+          Value: arn:aws:iam::432497273216:role/LabRole
+        - Namespace: aws:elasticbeanstalk:environment:proxy
+          OptionName: ProxyServer
+          Value: nginx
+        - Namespace: aws:elasticbeanstalk:application:environment
+          OptionName: REACT_APP_BACKEND_BASE_URL
+          Value: !Sub "https://${apiGatewayFor4GTaskManager}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+  beanstalkEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties: 
+      ApplicationName: !Ref beanstalkApplication
+      EnvironmentName: "4GTaskManagerEnv"
+      TemplateName: !Ref beanstalkConfigurationTemplate
+      VersionLabel: !Ref beanstalkAppVersion    
+Outputs:
+  snsTopicArn:
+    Description: "Get the ARN of the SNS topic created"
+    Value: !Ref snsForTaskManagerApp
